@@ -30,6 +30,12 @@ training:
   epochs: 10                        # Dummy training epochs/iterations
   val_every: 2                      # Validate every N epochs/iterations
 
+# Dataset settings
+dataset:
+  name: "ham10000"
+  meta_train_classes: ["nv", "mel", "bkl", "bcc", "akiec"]
+  meta_val_classes: ["df", "vasc"]
+
 # Experiment tracking
 wandb:
   project: "dermproto-edl"
@@ -40,3 +46,4 @@ paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
   checkpoints: "experiments"
+  kaggle_ham10000: "/kaggle/input/skin-cancer-mnist-ham10000"
