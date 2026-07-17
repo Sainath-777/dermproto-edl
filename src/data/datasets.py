@@ -11,16 +11,32 @@ class BaseSkinDataset(Dataset):
     """
     Abstract base class for dermatological datasets.
     """
-    def __init__(self, root: str, split_classes: list, transform=None, verify_distribution: bool = True):
+    def __init__(self, root: str, split_classes: list, transform=None, mode: str = 'train', verify_distribution: bool = True):
         self.root = root
         self.split_classes = split_classes
         self.transform = transform
+        self.mode = mode
         
         # Load and filter raw metadata (to be defined by subclass)
         raw_df = self.load_metadata()
         
         # Filter for active split classes
         self.df = raw_df[raw_df["label_str"].isin(self.split_classes)].reset_index(drop=True)
+        self.class_names = sorted(list(self.df["label_str"].unique()))
+        
+        # Mode-based train/val split: 80% train, 20% validation, sorted deterministically by path
+        split_dfs = []
+        for class_name in self.class_names:
+            class_df = self.df[self.df["label_str"] == class_name].copy()
+            class_df = class_df.sort_values(by="image_path").reset_index(drop=True)
+            n = len(class_df)
+            split_idx = int(n * 0.8)
+            if self.mode == 'train':
+                split_dfs.append(class_df.iloc[:split_idx])
+            else:  # val
+                split_dfs.append(class_df.iloc[split_idx:])
+                
+        self.df = pd.concat(split_dfs).reset_index(drop=True)
         self.class_names = sorted(list(self.df["label_str"].unique()))
         
         # Define class mapping
@@ -43,7 +59,7 @@ class BaseSkinDataset(Dataset):
         raise NotImplementedError("Subclasses must implement load_metadata()")
         
     def print_distribution(self):
-        print(f"\n--- Dataset Class Distribution ({self.__class__.__name__}) ---")
+        print(f"\n--- Dataset Class Distribution ({self.__class__.__name__} - Mode: {self.mode}) ---")
         counts = self.df["label_str"].value_counts()
         for name in self.class_names:
             count = counts.get(name, 0)
@@ -81,6 +97,9 @@ class HAM10000Dataset(BaseSkinDataset):
     """
     Dataset wrapper for HAM10000 dataset.
     """
+    def __init__(self, root: str, split_classes: list, transform=None, mode: str = 'train', verify_distribution: bool = True):
+        super().__init__(root, split_classes, transform, mode, verify_distribution)
+
     def load_metadata(self) -> pd.DataFrame:
         csv_path = os.path.join(self.root, "HAM10000_metadata.csv")
         if not os.path.exists(csv_path):

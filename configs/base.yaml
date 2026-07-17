@@ -5,30 +5,35 @@ seed: 42
 
 # Backbone configuration ("The Eye")
 backbone:
-  name: "vit_small_patch14_dinov2"  # timm or PyTorch Hub model name
+  name: "resnet18"                  # Phase 2 baseline backbone
   pretrained: true
-  freeze_layers: true               # Whether to freeze backbone parameters
+  freeze_layers: false              # Fine-tune the backbone during training
+  embedding_dim: 512                # ResNet-18 output size (after pooling)
 
 # Episodic (Few-Shot) sampling configuration
 episode:
   k_way: 5                          # Number of classes per episode
   n_shot: 1                         # Number of support images per class (1-shot or 5-shot)
-  n_query: 15                       # Number of query images per class
-  num_episodes: 1000                # Total episodes for training
+  n_query: 15                       # Number of query images per class (fixed for standard baseline)
+  num_episodes: 1000                # Total episodes (redundant in Phase 2 loop, overridden by training config)
 
 # Evidential Head settings ("The Honesty Check")
 edl:
-  kl_annealing_start: 0             # Episode/epoch at which KL annealing starts
-  kl_annealing_end: 500             # Episode/epoch at which KL annealing reaches max weight
-  kl_max_weight: 0.1                # Maximum weight for KL divergence penalty
+  kl_annealing_start: 0
+  kl_annealing_end: 500
+  kl_max_weight: 0.1
 
 # Optimization hyperparameters
 training:
   lr: 0.0001                        # Learning rate
-  optimizer: "adam"                 # Optimizer type (adam, adamw, sgd)
-  scheduler: "cosine"               # Learning rate scheduler (step, cosine, none)
-  epochs: 10                        # Dummy training epochs/iterations
-  val_every: 2                      # Validate every N epochs/iterations
+  optimizer: "adam"                 # Optimizer type
+  scheduler: "steplr"               # Learning rate scheduler
+  scheduler_step_size: 20          # LR halves every 20 epochs
+  scheduler_gamma: 0.5
+  epochs: 100                       # Train for 100 epochs (standard run)
+  episodes_per_epoch: 100           # 1 epoch = 100 training episodes
+  val_every: 5                      # Validate every 5 epochs
+  val_episodes: 50                  # 50 validation episodes per validation run
 
 # Dataset settings
 dataset:
@@ -39,11 +44,11 @@ dataset:
 # Experiment tracking
 wandb:
   project: "dermproto-edl"
-  entity: null                      # Weights & Biases entity (username or team name)
+  entity: null
 
 # Local and environment paths
 paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
-  checkpoints: "experiments"
+  checkpoints: "experiments/phase2_checkpoints"
   kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
