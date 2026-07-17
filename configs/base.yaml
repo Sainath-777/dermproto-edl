@@ -46,4 +46,4 @@ paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
   checkpoints: "experiments"
-  kaggle_ham10000: "/kaggle/input/skin-cancer-mnist-ham10000"
+  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
