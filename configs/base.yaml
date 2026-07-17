@@ -1,0 +1,42 @@
+# DermProto-EDL Base Configuration
+
+# Reproducibility seed
+seed: 42
+
+# Backbone configuration ("The Eye")
+backbone:
+  name: "vit_small_patch14_dinov2"  # timm or PyTorch Hub model name
+  pretrained: true
+  freeze_layers: true               # Whether to freeze backbone parameters
+
+# Episodic (Few-Shot) sampling configuration
+episode:
+  k_way: 5                          # Number of classes per episode
+  n_shot: 1                         # Number of support images per class (1-shot or 5-shot)
+  n_query: 15                       # Number of query images per class
+  num_episodes: 1000                # Total episodes for training
+
+# Evidential Head settings ("The Honesty Check")
+edl:
+  kl_annealing_start: 0             # Episode/epoch at which KL annealing starts
+  kl_annealing_end: 500             # Episode/epoch at which KL annealing reaches max weight
+  kl_max_weight: 0.1                # Maximum weight for KL divergence penalty
+
+# Optimization hyperparameters
+training:
+  lr: 0.0001                        # Learning rate
+  optimizer: "adam"                 # Optimizer type (adam, adamw, sgd)
+  scheduler: "cosine"               # Learning rate scheduler (step, cosine, none)
+  epochs: 10                        # Dummy training epochs/iterations
+  val_every: 2                      # Validate every N epochs/iterations
+
+# Experiment tracking
+wandb:
+  project: "dermproto-edl"
+  entity: null                      # Weights & Biases entity (username or team name)
+
+# Local and environment paths
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  checkpoints: "experiments"
