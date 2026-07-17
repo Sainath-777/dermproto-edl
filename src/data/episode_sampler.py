@@ -131,8 +131,15 @@ def plot_episode(episode: dict, save_path: str):
 
 
 if __name__ == "__main__":
-    # Local compilation / visualization check using mock data
     import yaml
+    import sys
+    
+    # Add parent directory to sys.path so we can import utils.py when running from root
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if parent_dir not in sys.path:
+        sys.path.append(parent_dir)
+        
+    from utils import resolve_data_root
     from datasets import HAM10000Dataset, build_transforms, generate_mock_dataset
     
     # Load config
@@ -140,12 +147,16 @@ if __name__ == "__main__":
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
         
-    mock_dir = "data/raw"
-    generate_mock_dataset(mock_dir)
+    # Resolve the data root (uses Kaggle path if present, else local)
+    data_root = resolve_data_root(config)
     
-    # Initialize mock dataset
+    # If the resolved path doesn't exist, generate local mock data as a fallback
+    if not os.path.exists(data_root):
+        generate_mock_dataset(data_root)
+        
+    # Initialize dataset (real or mock depending on path resolution)
     dataset = HAM10000Dataset(
-        root=mock_dir,
+        root=data_root,
         split_classes=config["dataset"]["meta_train_classes"],
         transform=build_transforms("train")
     )
