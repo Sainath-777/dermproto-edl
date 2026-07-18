@@ -7,7 +7,8 @@ class PrototypicalNet(nn.Module):
     Prototypical Network with a ResNet-18 backbone.
     Implements standard Snell et al. few-shot metric training.
     """
-    def __init__(self, pretrained: bool = True):
+    
+    def __init__(self, pretrained: bool = True, freeze_layers: bool = False):
         super().__init__()
         # Initialize ResNet-18 backbone, handling older and newer torchvision signatures
         try:
@@ -16,16 +17,15 @@ class PrototypicalNet(nn.Module):
         except AttributeError:
             self.backbone = models.resnet18(pretrained=pretrained)
             
+        if freeze_layers:
+            # Freeze early layers (conv1, layer1, layer2)
+            # We train layer3 and layer4 to give the model enough capacity to learn skin textures
+            for name, param in self.backbone.named_parameters():
+                if "layer3" not in name and "layer4" not in name:
+                    param.requires_grad = False
+                    
         # Replace fully connected classification layer with Identity to extract 512-dim features
         self.backbone.fc = nn.Identity()
-
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Extract embeddings from image tensor.
-        Input: (B, 3, 224, 224)
-        Output: (B, 512)
-        """
-        return self.backbone(x)
 
     def compute_prototypes(self, support_embeddings: torch.Tensor, k_way: int, n_shot: int) -> torch.Tensor:
         """

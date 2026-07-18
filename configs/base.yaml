@@ -24,14 +24,15 @@ edl:
   kl_max_weight: 0.1
 
 # Optimization hyperparameters
+# Optimization hyperparameters
 training:
-  lr: 0.00005                        # Learning rate
-  weight_decay: 0.001
+  lr: 0.00015                       # Increased from 0.00005 to speed up learning
+  weight_decay: 0.0005              # Slightly lowered to let the model adapt better
   optimizer: "adam"                 # Optimizer type
   scheduler: "steplr"               # Learning rate scheduler
-  scheduler_step_size: 20          # LR halves every 20 epochs
+  scheduler_step_size: 30           # LR halves every 30 epochs (slower decay)
   scheduler_gamma: 0.5
-  epochs: 100                       # Train for 100 epochs (standard run)
+  epochs: 30                        # Set to 30 to run a low-cost verification test
   episodes_per_epoch: 100           # 1 epoch = 100 training episodes
   val_every: 5                      # Validate every 5 epochs
   val_episodes: 50                  # 50 validation episodes per validation run
