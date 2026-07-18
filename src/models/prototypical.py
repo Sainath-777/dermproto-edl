@@ -27,6 +27,14 @@ class PrototypicalNet(nn.Module):
         # Replace fully connected classification layer with Identity to extract 512-dim features
         self.backbone.fc = nn.Identity()
 
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Extract embeddings from image tensor.
+        Input: (B, 3, 224, 224)
+        Output: (B, 512)
+        """
+        return self.backbone(x)
+
     def compute_prototypes(self, support_embeddings: torch.Tensor, k_way: int, n_shot: int) -> torch.Tensor:
         """
         Computes prototypes (centroids) for each class in the support set.
