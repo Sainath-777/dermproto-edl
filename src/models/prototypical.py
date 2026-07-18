@@ -1,47 +1,38 @@
 import torch
 import torch.nn as nn
-from torchvision import models
 
 class PrototypicalNet(nn.Module):
     """
-    Prototypical Network with a ResNet-18 backbone.
+    Prototypical Network with a pluggable backbone.
     Implements standard Snell et al. few-shot metric training.
     """
     
-    def __init__(self, pretrained: bool = True, freeze_layers: bool = False):
+    def __init__(self, backbone: nn.Module):
+        """
+        Args:
+            backbone: Any encoder module that implements `.encode(x)` and
+                      provides `.embedding_dim`.
+                      Pass DINOv2Backbone for Phase 3+.
+                      Pass legacy ResNet-18 wrapper for Phase 2 baseline runs.
+        """
         super().__init__()
-        # Initialize ResNet-18 backbone, handling older and newer torchvision signatures
-        try:
-            weights = models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
-            self.backbone = models.resnet18(weights=weights)
-        except AttributeError:
-            self.backbone = models.resnet18(pretrained=pretrained)
-            
-        if freeze_layers:
-            # Freeze early layers (conv1, layer1, layer2)
-            # We train layer3 and layer4 to give the model enough capacity to learn skin textures
-            for name, param in self.backbone.named_parameters():
-                if "layer3" not in name and "layer4" not in name:
-                    param.requires_grad = False
-                    
-        # Replace fully connected classification layer with Identity to extract 512-dim features
-        self.backbone.fc = nn.Identity()
+        self.backbone = backbone
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """
         Extract embeddings from image tensor.
         Input: (B, 3, 224, 224)
-        Output: (B, 512)
+        Output: (B, embedding_dim)
         """
-        return self.backbone(x)
+        return self.backbone.encode(x)
 
     def compute_prototypes(self, support_embeddings: torch.Tensor, k_way: int, n_shot: int) -> torch.Tensor:
         """
         Computes prototypes (centroids) for each class in the support set.
-        support_embeddings: (K * N, 512)
-        Returns: (K, 512)
+        support_embeddings: (K * N, embedding_dim)
+        Returns: (K, embedding_dim)
         """
-        # Reshape to (K, N, 512) and take the mean along the shot dimension
+        # Reshape to (K, N, embedding_dim) and take the mean along the shot dimension
         reshaped = support_embeddings.view(k_way, n_shot, -1)
         prototypes = reshaped.mean(dim=1)
         return prototypes
@@ -49,8 +40,8 @@ class PrototypicalNet(nn.Module):
     def compute_distances(self, query_embeddings: torch.Tensor, prototypes: torch.Tensor) -> torch.Tensor:
         """
         Computes squared Euclidean distance from each query to each class prototype.
-        query_embeddings: (K * Q, 512)
-        prototypes: (K, 512)
+        query_embeddings: (K * Q, embedding_dim)
+        prototypes: (K, embedding_dim)
         Returns: (K * Q, K) squared Euclidean distances
         """
         q_size = query_embeddings.size(0)
@@ -69,11 +60,11 @@ class PrototypicalNet(nn.Module):
         Episodic forward pass.
         support_images: (K * N, 3, 224, 224)
         query_images: (K * Q, 3, 224, 224)
-        Returns Logits: (K * Q, K) (negative squared Euclidean distances)
+        Returns Logites: (K * Q, K) (negative squared Euclidean distances)
         """
         # Extract features for both support and query sets
-        support_embeddings = self.encode(support_images)  # (K * N, 512)
-        query_embeddings = self.encode(query_images)      # (K * Q, 512)
+        support_embeddings = self.encode(support_images)
+        query_embeddings = self.encode(query_images)
         
         # Calculate prototypes and distance matrix
         prototypes = self.compute_prototypes(support_embeddings, k_way, n_shot)
@@ -96,8 +87,15 @@ def compute_accuracy(logits: torch.Tensor, query_labels: torch.Tensor) -> float:
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    # Append parent folder to sys.path so we can import backbone
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from models.backbone import DINOv2Backbone
+    
     print("Running standalone shape verification test...")
-    model = PrototypicalNet(pretrained=False)
+    backbone = DINOv2Backbone(pretrained=False, freeze=True)
+    model = PrototypicalNet(backbone=backbone)
     
     # 5-way 1-shot setup with 15 queries per class
     k_way = 5

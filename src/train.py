@@ -11,9 +11,10 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "data")))
 
-from utils import set_seed, resolve_data_root
+from utils import set_seed, resolve_data_root, load_checkpoint_if_exists
 from data.datasets import HAM10000Dataset, build_transforms
 from data.episode_sampler import EpisodeSampler
+from models.backbone import DINOv2Backbone
 from models.prototypical import PrototypicalNet, compute_accuracy
 
 def main():
@@ -73,26 +74,50 @@ def main():
         n_query=n_query
     )
 
-    # Initialize model
-    model = PrototypicalNet(pretrained=config["backbone"]["pretrained"])
+    # Initialize DINOv2 backbone + PrototypicalNet (Phase 3)
+    backbone = DINOv2Backbone(
+        pretrained=config["backbone"]["pretrained"],
+        freeze=config["backbone"]["freeze"]
+    )
+    model = PrototypicalNet(backbone=backbone)
     model = model.to(device)
 
-    # Setup loss and optimizer settings
-    optimizer = torch.optim.Adam(model.parameters(), lr=config["training"]["lr"])
+    # Filter out parameters that require gradients
+    trainable_params = list(filter(lambda p: p.requires_grad, model.parameters()))
     
-    # Scheduler: StepLR reduces LR by 50% every 20 epochs
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer,
-        step_size=config["training"]["scheduler_step_size"],
-        gamma=config["training"]["scheduler_gamma"]
+    optimizer = None
+    scheduler = None
+    criterion = None
+    
+    if len(trainable_params) > 0:
+        weight_decay = config["training"].get("weight_decay", 0.0)
+        optimizer = torch.optim.Adam(
+            trainable_params, 
+            lr=config["training"]["lr"],
+            weight_decay=weight_decay
+        )
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=config["training"]["scheduler_step_size"],
+            gamma=config["training"]["scheduler_gamma"]
+        )
+        criterion = nn.CrossEntropyLoss()
+    else:
+        print("[Phase 3 Info] Backbone is fully frozen. Running baseline episodic validation across epochs without gradient updates.")
+
+    # Auto-resume from checkpoint if one exists (Rule 9 contract)
+    start_epoch, best_val_acc_resumed = load_checkpoint_if_exists(
+        checkpoint_dir=config["paths"]["checkpoints"],
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler
     )
-    
-    criterion = nn.CrossEntropyLoss()
 
     # Initialize W&B tracking
     wandb.init(
         project=config["wandb"]["project"],
         entity=config["wandb"]["entity"],
+        name="phase3-dinov2-vits14-baseline",
         config=config
     )
 
@@ -105,11 +130,14 @@ def main():
             scheduler=scheduler,
             criterion=criterion,
             device=device,
-            config=config
+            config=config,
+            start_epoch=start_epoch,
+            initial_best_val_acc=best_val_acc_resumed
         )
 
-def train_model(model, train_sampler, val_sampler, optimizer, scheduler, criterion, device, config):
-    best_val_acc = 0.0
+def train_model(model, train_sampler, val_sampler, optimizer, scheduler, criterion, device, config,
+                start_epoch: int = 1, initial_best_val_acc: float = 0.0):
+    best_val_acc = initial_best_val_acc
     checkpoint_dir = config["paths"]["checkpoints"]
     os.makedirs(checkpoint_dir, exist_ok=True)
     
@@ -121,8 +149,12 @@ def train_model(model, train_sampler, val_sampler, optimizer, scheduler, criteri
     k_way = config["episode"]["k_way"]
     n_shot = config["episode"]["n_shot"]
 
-    print("\nStarting Phase 2 training loop...")
-    for epoch in range(1, total_epochs + 1):
+    if start_epoch > total_epochs:
+        print(f"All {total_epochs} epochs already completed. Validation accuracy is frozen at: {best_val_acc:.4f}")
+        return
+
+    print(f"\nStarting Phase 3 training loop (DINOv2 baseline mode)...")
+    for epoch in range(start_epoch, total_epochs + 1):
         model.train()
         epoch_losses = []
         epoch_accs = []
@@ -137,27 +169,37 @@ def train_model(model, train_sampler, val_sampler, optimizer, scheduler, criteri
             query_images = episode["query_images"].to(device)
             query_labels = episode["query_labels"].to(device)
             
-            optimizer.zero_grad()
-            
-            # Forward pass
-            logits = model(support_images, query_images, k_way, n_shot)
-            loss = criterion(logits, query_labels)
-            
-            # Optimize weights
-            loss.backward()
-            optimizer.step()
+            if optimizer is not None:
+                optimizer.zero_grad()
+                
+                # Forward pass
+                logits = model(support_images, query_images, k_way, n_shot)
+                loss = criterion(logits, query_labels)
+                
+                # Optimize weights
+                loss.backward()
+                optimizer.step()
+                epoch_losses.append(loss.item())
+            else:
+                # No optimizer path (evaluation-only baseline)
+                with torch.no_grad():
+                    logits = model(support_images, query_images, k_way, n_shot)
+                # Log dummy 0 loss in W&B to maintain graph consistency
+                epoch_losses.append(0.0)
             
             # Metrics
             acc = compute_accuracy(logits.detach(), query_labels)
-            epoch_losses.append(loss.item())
             epoch_accs.append(acc)
 
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
+            current_lr = scheduler.get_last_lr()[0]
+        else:
+            current_lr = 0.0
         
         # Log training epoch stats
         mean_loss = np.mean(epoch_losses)
         mean_acc = np.mean(epoch_accs)
-        current_lr = scheduler.get_last_lr()[0]
         
         print(f"Epoch {epoch:3d}/{total_epochs} | Train Loss: {mean_loss:.4f} | Train Acc: {mean_acc:.4f} | LR: {current_lr:.6f}")
         wandb.log({
@@ -192,16 +234,20 @@ def train_model(model, train_sampler, val_sampler, optimizer, scheduler, criteri
                 "epoch": epoch
             })
             
-            # Checkpoint saving on accuracy increase
+            # Save best validation model checkpoint
             if mean_val_acc > best_val_acc:
                 best_val_acc = mean_val_acc
                 checkpoint_data = {
                     "epoch": epoch,
+                    "total_epochs": total_epochs,
                     "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
                     "best_val_acc": best_val_acc,
                     "config": config
                 }
+                if optimizer is not None:
+                    checkpoint_data["optimizer_state_dict"] = optimizer.state_dict()
+                if scheduler is not None:
+                    checkpoint_data["scheduler_state_dict"] = scheduler.state_dict()
                 
                 checkpoint_filename = f"best_model_epoch{epoch}_acc{mean_val_acc:.4f}.pt"
                 checkpoint_path = os.path.join(checkpoint_dir, checkpoint_filename)
@@ -209,14 +255,31 @@ def train_model(model, train_sampler, val_sampler, optimizer, scheduler, criteri
                 print(f" >>> New best validation accuracy saved at: {checkpoint_path}")
                 wandb.save(checkpoint_path)
 
+        # SAVE LATEST CHECKPOINT (Continuous safety net - runs EVERY epoch)
+        latest_data = {
+            "epoch": epoch,
+            "total_epochs": total_epochs,
+            "model_state_dict": model.state_dict(),
+            "best_val_acc": best_val_acc,
+            "config": config
+        }
+        if optimizer is not None:
+            latest_data["optimizer_state_dict"] = optimizer.state_dict()
+        if scheduler is not None:
+            latest_data["scheduler_state_dict"] = scheduler.state_dict()
+            
+        latest_path = os.path.join(checkpoint_dir, "latest_checkpoint.pt")
+        torch.save(latest_data, latest_path)
+        print(f" >>> Saved current progress to: {latest_path}")
+
     print("\nTraining completed!")
     print(f"Best Validation Accuracy achieved: {best_val_acc:.4f}")
     
-    # Evaluate go/no-go gate (validation target is 60%)
-    if best_val_acc >= 0.60:
-        print("GATE PASSED: Proceed to Phase 3")
+    # Phase 3 Gate Check (Target is 70%)
+    if best_val_acc >= 0.70:
+        print(f"PHASE 3 GATE PASSED: DINOv2 baseline Val Acc is {best_val_acc:.4f} (>= 70%). Proceed to Phase 4 (EDL head).")
     else:
-        print("GATE FAILED: Debug before Phase 3")
+        print(f"PHASE 3 GATE: Val Acc = {best_val_acc:.4f}. Below 70% target. Proceed with caution.")
         
     wandb.finish()
 
