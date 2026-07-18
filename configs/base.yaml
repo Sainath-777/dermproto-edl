@@ -7,7 +7,7 @@ seed: 42
 backbone:
   name: "resnet18"                  # Phase 2 baseline backbone
   pretrained: true
-  freeze_layers: false              # Fine-tune the backbone during training
+  freeze_layers: true               # Fine-tune the backbone during training
   embedding_dim: 512                # ResNet-18 output size (after pooling)
 
 # Episodic (Few-Shot) sampling configuration
@@ -25,7 +25,8 @@ edl:
 
 # Optimization hyperparameters
 training:
-  lr: 0.0001                        # Learning rate
+  lr: 0.00005                        # Learning rate
+  weight_decay: 0.001
   optimizer: "adam"                 # Optimizer type
   scheduler: "steplr"               # Learning rate scheduler
   scheduler_step_size: 20          # LR halves every 20 epochs
