@@ -13,27 +13,28 @@ backbone:
 # Episodic (Few-Shot) sampling configuration
 episode:
   k_way: 5                          # Number of classes per episode
-  n_shot: 1                         # Number of support images per class (1-shot or 5-shot)
-  n_query: 15                       # Number of query images per class (fixed for standard baseline)
-  num_episodes: 1000                # Total episodes (redundant in Phase 2 loop, overridden by training config)
+  n_shot: 5                         # 5-shot required for Phase 4 so dispersion σ_k > 0
+  n_query: 15                       # Number of query images per class
+  num_episodes: 1000                # Total episodes
 
 # Evidential Head settings ("The Honesty Check")
 edl:
+  hidden_dim: 64
   kl_annealing_start: 0
-  kl_annealing_end: 500
+  kl_annealing_end: 500             # 500 episodes ≈ 5 epochs × 100 ep/epoch
   kl_max_weight: 0.1
 
 # Optimization hyperparameters
 training:
-  lr: 0.00015                       # Increased from 0.00005 to speed up learning
-  weight_decay: 0.0005              # Slightly lowered to let the model adapt better
+  lr: 0.00015                       # Learning rate for Evidential Head
+  weight_decay: 0.0005              # Weight decay
   optimizer: "adam"                 # Optimizer type
   scheduler: "steplr"               # Learning rate scheduler
-  scheduler_step_size: 30           # LR halves every 30 epochs (slower decay)
+  scheduler_step_size: 30           # LR halves every 30 epochs
   scheduler_gamma: 0.5
-  epochs: 3                         # Set to 3 epochs for Phase 3 dry-run/sanity verification
+  epochs: 5                         # Set to 5 for Rule 10 Sanity Gate (Stage 1)
   episodes_per_epoch: 100           # 1 epoch = 100 training episodes
-  val_every: 1                      # Validate every epoch for baseline monitoring
+  val_every: 1                      # Validate every epoch
   val_episodes: 50                  # 50 validation episodes per validation run
 
 # Dataset settings
@@ -51,5 +52,60 @@ wandb:
 paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
-  checkpoints: "experiments/phase3_checkpoints"  # Saved checkpoints for Phase 3
+  checkpoints: "experiments/phase4_checkpoints"  # Saved checkpoints for Phase 4
+  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"# DermProto-EDL Base Configuration
+
+# Reproducibility seed
+seed: 42
+
+# Backbone configuration ("The Eye")
+backbone:
+  name: "dinov2_vits14"          # DINOv2 ViT-Small, patch size 14
+  pretrained: true               # Load Meta's pretrained weights via torch.hub
+  freeze: true                   # ALL backbone params frozen — do NOT change this
+  embedding_dim: 384             # ViT-S/14 CLS token output dim — do NOT change this
+
+# Episodic (Few-Shot) sampling configuration
+episode:
+  k_way: 5                          # Number of classes per episode
+  n_shot: 5                         # 5-shot required for Phase 4 so dispersion σ_k > 0
+  n_query: 15                       # Number of query images per class
+  num_episodes: 1000                # Total episodes
+
+# Evidential Head settings ("The Honesty Check")
+edl:
+  hidden_dim: 64
+  kl_annealing_start: 0
+  kl_annealing_end: 500             # 500 episodes ≈ 5 epochs × 100 ep/epoch
+  kl_max_weight: 0.1
+
+# Optimization hyperparameters
+training:
+  lr: 0.00015                       # Learning rate for Evidential Head
+  weight_decay: 0.0005              # Weight decay
+  optimizer: "adam"                 # Optimizer type
+  scheduler: "steplr"               # Learning rate scheduler
+  scheduler_step_size: 30           # LR halves every 30 epochs
+  scheduler_gamma: 0.5
+  epochs: 5                         # Set to 5 for Rule 10 Sanity Gate (Stage 1)
+  episodes_per_epoch: 100           # 1 epoch = 100 training episodes
+  val_every: 1                      # Validate every epoch
+  val_episodes: 50                  # 50 validation episodes per validation run
+
+# Dataset settings
+dataset:
+  name: "ham10000"
+  meta_train_classes: ["nv", "mel", "bkl", "bcc", "akiec"]
+  meta_val_classes: ["df", "vasc"]
+
+# Experiment tracking
+wandb:
+  project: "dermproto-edl"
+  entity: null
+
+# Local and environment paths
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  checkpoints: "experiments/phase4_checkpoints"  # Saved checkpoints for Phase 4
   kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
