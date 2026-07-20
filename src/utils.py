@@ -4,9 +4,6 @@ import numpy as np
 import torch
 
 def set_seed(seed: int = 42):
-    """
-    Sets deterministic seeds for reproducibility.
-    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -18,10 +15,6 @@ def set_seed(seed: int = 42):
     print(f"Reproducibility seed set: {seed}")
 
 def resolve_data_root(config: dict) -> str:
-    """
-    Resolves data directory path, checking for local raw folders
-    or Kaggle's standard mount path.
-    """
     local_path = config["paths"]["data_raw"]
     kaggle_path = config["paths"]["kaggle_ham10000"]
     
@@ -32,24 +25,11 @@ def resolve_data_root(config: dict) -> str:
         print(f"Data root resolved on Kaggle: {kaggle_path}")
         return kaggle_path
     else:
-        # Fallback to local path (creates directory structure)
         os.makedirs(local_path, exist_ok=True)
         print(f"Data root directory created locally (empty): {local_path}")
         return local_path
 
-def load_checkpoint_if_exists(checkpoint_dir: str, model, optimizer=None, scheduler=None):
-    """
-    Auto-resume logic. Scans checkpoint_dir for a 'latest_checkpoint.pt' file,
-    loads it if it exists, and restores model state (and optionally optimizer/scheduler).
-
-    Returns:
-        start_epoch (int): The epoch to resume FROM (i.e., last completed epoch + 1).
-                           Returns 1 if no checkpoint found (fresh start).
-        best_val_acc (float): Best validation accuracy from the loaded checkpoint.
-                              Returns 0.0 if no checkpoint found.
-
-    Prints a clear resume or fresh-start message per Rule 9 (verbose prints contract).
-    """
+def load_checkpoint_if_exists(checkpoint_dir: str, model, optimizer=None, scheduler=None, edl_head=None):
     if not os.path.isdir(checkpoint_dir):
         print("No checkpoint directory found. Starting training from scratch (Epoch 1)...")
         return 1, 0.0
@@ -64,6 +44,10 @@ def load_checkpoint_if_exists(checkpoint_dir: str, model, optimizer=None, schedu
     checkpoint_data = torch.load(latest_path, map_location="cpu")
 
     model.load_state_dict(checkpoint_data["model_state_dict"])
+    if edl_head is not None and "edl_head_state_dict" in checkpoint_data:
+        edl_head.load_state_dict(checkpoint_data["edl_head_state_dict"])
+        print("[Checkpoint] Evidential head weights restored.")
+
     if optimizer is not None and "optimizer_state_dict" in checkpoint_data:
         optimizer.load_state_dict(checkpoint_data["optimizer_state_dict"])
 
