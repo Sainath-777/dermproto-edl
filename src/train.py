@@ -44,7 +44,7 @@ def main():
         mode="train"
     )
 
-    # FIXED: Validation dataset uses meta_val_classes (Rule 11 finding)
+    # Validation dataset evaluates on unseen rare classes (df, vasc)
     val_dataset = HAM10000Dataset(
         root=data_root,
         split_classes=config["dataset"]["meta_val_classes"],
@@ -52,12 +52,13 @@ def main():
         mode="val"
     )
 
-    k_way = config["episode"]["k_way"]
-    n_shot = config["episode"]["n_shot"]
-    n_query = config["episode"]["n_query"]
+    k_way = config["episode"]["k_way"]                           # 5-way for meta-training
+    k_way_val = len(config["dataset"]["meta_val_classes"])       # 2-way for unseen meta-validation (df, vasc)
+    n_shot = config["episode"]["n_shot"]                         # 5-shot
+    n_query = config["episode"]["n_query"]                       # 15 query images
 
     train_sampler = EpisodeSampler(dataset=train_dataset, k_way=k_way, n_shot=n_shot, n_query=n_query)
-    val_sampler = EpisodeSampler(dataset=val_dataset, k_way=k_way, n_shot=n_shot, n_query=n_query)
+    val_sampler = EpisodeSampler(dataset=val_dataset, k_way=k_way_val, n_shot=n_shot, n_query=n_query)
 
     backbone = DINOv2Backbone(
         pretrained=config["backbone"]["pretrained"],
@@ -105,11 +106,12 @@ def main():
             device=device,
             config=config,
             start_epoch=start_epoch,
-            initial_best_val_acc=best_val_acc_resumed
+            initial_best_val_acc=best_val_acc_resumed,
+            k_way_val=k_way_val
         )
 
 def train_model(model, edl_head, train_sampler, val_sampler, optimizer, scheduler, device, config,
-                start_epoch: int = 1, initial_best_val_acc: float = 0.0):
+                start_epoch: int = 1, initial_best_val_acc: float = 0.0, k_way_val: int = 2):
     best_val_acc = initial_best_val_acc
     checkpoint_dir = config["paths"]["checkpoints"]
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -130,7 +132,7 @@ def train_model(model, edl_head, train_sampler, val_sampler, optimizer, schedule
         print(f"All {total_epochs} epochs already completed. Validation accuracy: {best_val_acc:.4f}")
         return
 
-    print(f"\nStarting Phase 4 Evidential Training Loop...")
+    print(f"\nStarting Phase 4 Evidential Training Loop (5-way train / {k_way_val}-way val)...")
     for epoch in range(start_epoch, total_epochs + 1):
         model.eval() # Backbone frozen
         edl_head.train()
@@ -206,7 +208,8 @@ def train_model(model, edl_head, train_sampler, val_sampler, optimizer, schedule
                     query_images = episode["query_images"].to(device)
                     query_labels = episode["query_labels"].to(device)
                     
-                    dists, disps, _, _ = model.forward_edl(support_images, query_images, k_way, n_shot)
+                    # 2-way evaluation on unseen classes
+                    dists, disps, _, _ = model.forward_edl(support_images, query_images, k_way_val, n_shot)
                     edl_out = edl_head(dists, disps)
                     
                     acc = compute_accuracy(edl_out["probs"], query_labels)
@@ -215,7 +218,7 @@ def train_model(model, edl_head, train_sampler, val_sampler, optimizer, schedule
                     
             mean_val_acc = np.mean(val_accs)
             mean_val_u = np.mean(val_uncertainties)
-            print(f" >>> Validation | Epoch {epoch:3d} | Val Acc: {mean_val_acc:.4f} | Mean Uncertainty: {mean_val_u:.4f}")
+            print(f" >>> Validation ({k_way_val}-way Unseen) | Epoch {epoch:3d} | Val Acc: {mean_val_acc:.4f} | Mean Uncertainty: {mean_val_u:.4f}")
             wandb.log({
                 "val/acc": mean_val_acc,
                 "val/uncertainty": mean_val_u,
