@@ -3,11 +3,11 @@ evidential_head.py — Support-Set-Consistency-Aware Evidential Head
 
 Novel component of DermProto-EDL.
 
-Takes per-class [distance, dispersion] pairs from the Prototypical Network
+Takes per-class [-distance, dispersion] pairs from the Prototypical Network
 and outputs evidence → Dirichlet parameters → (probability, uncertainty).
 
 Architecture:
-    Input:  (n_queries, K, 2)  — per-query, per-class [d_k, σ_k] feature
+    Input:  (n_queries, K, 2)  — per-query, per-class [-d_k, σ_k] feature
     Hidden: Linear(2 → 64) + ReLU
     Output: Linear(64 → 1) + ReLU → evidence per class  (K,) per query
 
@@ -35,11 +35,7 @@ class EvidentialHead(nn.Module):
         super().__init__()
 
         self.mlp = nn.Sequential(
-            nn.Linear(2, hidden_dim),       # [d_k, σ_k] → hidden
-            # NOTE: LayerNorm intentionally OMITTED here.
-            # DINOv2 embeddings are L2-normalized → squared distances bounded in [0,4].
-            # LayerNorm would normalize the 64 hidden activations per sample,
-            # erasing the absolute magnitude of d_k/σ_k which IS the signal.
+            nn.Linear(2, hidden_dim),       # [-d_k, σ_k] → hidden
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),       # hidden → 1 evidence scalar per class
         )
@@ -56,7 +52,6 @@ class EvidentialHead(nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.zeros_(m.bias)
-        # Scale down the final layer specifically
         nn.init.uniform_(self.mlp[-1].weight, -0.01, 0.01)
 
     def forward(
@@ -81,11 +76,14 @@ class EvidentialHead(nn.Module):
         """
         n_queries, K = distances.shape
 
+        # FIXED: Use negative distance so smaller distance = higher similarity input
+        similarity = -distances
+
         # Broadcast dispersions to (n_queries, K)
         disp_expanded = dispersions.unsqueeze(0).expand(n_queries, K)
-        features = torch.stack([distances, disp_expanded], dim=-1)
+        features = torch.stack([similarity, disp_expanded], dim=-1)
 
-        # MLP maps each (d_k, σ_k) pair → 1 evidence scalar
+        # MLP maps each (-d_k, σ_k) pair → 1 evidence scalar
         evidence = self.mlp(features.view(-1, 2))          # (n_queries * K, 1)
         evidence = F.relu(evidence)                        # enforce non-negativity
         evidence = evidence.view(n_queries, K)             # (n_queries, K)
