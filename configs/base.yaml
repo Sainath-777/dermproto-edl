@@ -16,10 +16,12 @@ episode:
   n_shot: 5                         # 5-shot required for Phase 4 so dispersion σ_k > 0
   n_query: 15                       # Number of query images per class
   num_episodes: 1000                # Total episodes
+  distance_metric: "euclidean"      # Options: "euclidean" | "cosine" (A3 ablation)
 
 # Evidential Head settings ("The Honesty Check")
 edl:
   hidden_dim: 64
+  use_dispersion: true              # Set false for A6-no-sigma ablation
   kl_annealing_start: 0
   kl_annealing_end: 500             # 500 episodes ≈ 5 epochs × 100 ep/epoch
   kl_max_weight: 0.1
@@ -32,10 +34,15 @@ training:
   scheduler: "steplr"               # Learning rate scheduler
   scheduler_step_size: 30           # LR halves every 30 epochs
   scheduler_gamma: 0.5
-  epochs: 50                        # Set to 50 for Stage 2 Full Training Run
+  epochs: 50                        # Set to 50 for full training run
   episodes_per_epoch: 100           # 1 epoch = 100 training episodes
   val_every: 1                      # Validate every epoch
   val_episodes: 50                  # 50 validation episodes per validation run
+  uncertainty_mode: "edl"           # Options: "edl" | "plain_proto" | "temp_scaled" (A2 ablation)
+
+# Inference settings (A4 & A5)
+inference:
+  tta_passes: 1                     # 1 = single pass, 5 = 5-pass TTA (A4 ablation)
 
 # Dataset settings
 dataset:
@@ -52,5 +59,5 @@ wandb:
 paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
-  checkpoints: "experiments/phase4_checkpoints"  # Saved checkpoints for Phase 4
+  checkpoints: "experiments/phase4_checkpoints"
   kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"

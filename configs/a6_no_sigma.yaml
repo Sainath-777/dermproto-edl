@@ -1,0 +1,48 @@
+# A6 Ablation: EDL Head WITHOUT Dispersion σ_k (Trained from scratch)
+seed: 42
+backbone:
+  name: "dinov2_vits14"
+  pretrained: true
+  freeze: true
+  embedding_dim: 384
+
+episode:
+  k_way: 5
+  n_shot: 5
+  n_query: 15
+  distance_metric: "euclidean"
+
+edl:
+  hidden_dim: 64
+  use_dispersion: false # Zeroes out σ_k to isolate dispersion contribution
+  kl_annealing_start: 0
+  kl_annealing_end: 500
+  kl_max_weight: 0.1
+
+training:
+  lr: 0.00015
+  weight_decay: 0.0005
+  optimizer: "adam"
+  scheduler: "steplr"
+  scheduler_step_size: 30
+  scheduler_gamma: 0.5
+  epochs: 50
+  episodes_per_epoch: 100
+  val_every: 1
+  val_episodes: 50
+  uncertainty_mode: "edl"
+
+dataset:
+  name: "ham10000"
+  meta_train_classes: ["nv", "mel", "bkl", "bcc", "akiec"]
+  meta_val_classes: ["df", "vasc"]
+
+wandb:
+  project: "dermproto-edl"
+  name: "ablation-a6-no-sigma"
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  checkpoints: "experiments/ablation_a6_no_sigma"
+  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"

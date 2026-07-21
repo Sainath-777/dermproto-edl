@@ -1,0 +1,35 @@
+# A4 Ablation: Test-Time Augmentation (5 Passes)
+seed: 42
+backbone:
+  name: "dinov2_vits14"
+  pretrained: true
+  freeze: true
+  embedding_dim: 384
+
+episode:
+  k_way: 5
+  n_shot: 5
+  n_query: 15
+  distance_metric: "euclidean"
+
+edl:
+  hidden_dim: 64
+  use_dispersion: true
+
+inference:
+  tta_passes: 5
+
+dataset:
+  name: "ham10000"
+  meta_train_classes: ["nv", "mel", "bkl", "bcc", "akiec"]
+  meta_val_classes: ["df", "vasc"]
+
+wandb:
+  project: "dermproto-edl"
+  name: "ablation-a4-tta5"
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  checkpoints: "experiments/phase4_checkpoints"
+  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"

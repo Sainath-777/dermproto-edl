@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DermProto-EDL — Full System Architecture</title>
+<style>
+  :root{
+    --bg:#0e1220;
+    --card:#161c2e;
+    --card2:#1b2238;
+    --border:#2a3350;
+    --text:#e7ebf5;
+    --text-dim:#9aa4c0;
+    --text-faint:#6b7494;
+    --c-cnn:#3b82f6;
+    --c-dino:#a855f7;
+    --c-fewshot:#ec4899;
+    --c-proto:#14b8a6;
+    --c-edl:#f97316;
+    --c-eval:#22c55e;
+    --c-pipe:#facc15;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;
+    padding-bottom:80px;
+  }
+  code, .mono{
+    font-family:"SF Mono",Consolas,Monaco,"Courier New",monospace;
+    background:rgba(255,255,255,0.06);
+    padding:1px 6px;
+    border-radius:5px;
+    font-size:0.9em;
+    color:#fbbf24;
+  }
+  header.top{
+    padding:48px 24px 28px;
+    max-width:1100px;
+    margin:0 auto;
+    text-align:center;
+  }
+  header.top h1{
+    font-size:1.9rem;
+    font-weight:800;
+    letter-spacing:-0.02em;
+    margin-bottom:10px;
+  }
+  header.top p{
+    color:var(--text-dim);
+    font-size:1.02rem;
+    max-width:680px;
+    margin:0 auto;
+  }
+  nav.jump{
+    position:sticky; top:0; z-index:50;
+    background:rgba(14,18,32,0.92);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);
+    padding:12px 16px;
+    display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+  }
+  nav.jump a{
+    color:var(--text-dim);
+    text-decoration:none;
+    font-size:0.78rem;
+    font-weight:600;
+    padding:7px 12px;
+    border-radius:20px;
+    border:1px solid var(--border);
+    white-space:nowrap;
+    transition:all .15s ease;
+  }
+  nav.jump a:hover, nav.jump a.active{
+    color:#fff;
+    border-color:var(--accent,var(--c-pipe));
+    background:rgba(255,255,255,0.05);
+  }
+  main{max-width:1100px; margin:0 auto; padding:0 20px;}
+  section{padding:52px 0 20px; border-top:1px solid var(--border);}
+  section:first-of-type{border-top:none;}
+  .tag{
+    display:inline-block;
+    font-size:0.7rem;
+    font-weight:800;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 15%, transparent);
+    padding:4px 10px;
+    border-radius:6px;
+    margin-bottom:10px;
+  }
+  h2{font-size:1.55rem; font-weight:800; letter-spacing:-0.01em; margin-bottom:6px;}
+  .subtitle{color:var(--text-dim); font-size:1rem; margin-bottom:26px; max-width:760px;}
+  .diagram{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-left:3px solid var(--accent);
+    border-radius:12px;
+    padding:22px;
+    margin-bottom:26px;
+    overflow-x:auto;
+  }
+  .diagram .dlabel{
+    font-size:0.68rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+    color:var(--text-faint); margin-bottom:14px;
+  }
+  .pipeline{display:flex; align-items:center; flex-wrap:nowrap; gap:0; min-width:max-content;}
+  .pbox{
+    background:var(--card2);
+    border:1px solid var(--border);
+    padding:12px 15px;
+    border-radius:10px;
+    text-align:center;
+    min-width:120px;
+    font-size:0.82rem;
+    font-weight:600;
+  }
+  .pbox small{display:block; font-weight:400; color:var(--text-dim); font-size:0.72rem; margin-top:3px;}
+  .parrow{color:var(--accent); font-size:1.3rem; padding:0 10px; flex-shrink:0;}
+  .pipeline.wrap{flex-wrap:wrap; row-gap:14px;}
+  .branch-row{
+    display:flex; align-items:center; gap:0; margin-bottom:10px; flex-wrap:nowrap; min-width:max-content;
+  }
+  .branch-tag{
+    font-size:0.68rem; font-weight:700; color:var(--text-faint); width:76px; flex-shrink:0;
+  }
+  .merge-box{
+    margin-top:10px; padding:12px 16px; border-radius:10px;
+    background:color-mix(in srgb, var(--accent) 12%, var(--card2));
+    border:1px dashed var(--accent);
+    font-size:0.82rem; font-weight:700; text-align:center;
+  }
+  .explain-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:14px;
+  }
+  @media (max-width:800px){
+    .explain-grid{grid-template-columns:1fr;}
+  }
+  .ecard{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:18px;
+  }
+  .ecard h4{
+    font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--accent); font-weight:800; margin-bottom:9px;
+  }
+  .ecard p{font-size:0.89rem; color:#d5dae8;}
+  .ecard p + p{margin-top:8px;}
+  .callout{
+    background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--card)), var(--card));
+    border:1px solid var(--accent);
+    border-radius:12px;
+    padding:20px;
+    margin:20px 0;
+  }
+  .callout .star{color:var(--accent); font-weight:800; font-size:0.72rem; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px; display:block;}
+  .callout p{font-size:0.9rem; color:#e4e8f2;}
+  .callout p + p{margin-top:10px;}
+  .formula{
+    font-family:"SF Mono",Consolas,Monaco,monospace;
+    background:#0a0d18;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px 16px;
+    margin:10px 0;
+    font-size:0.88rem;
+    color:#7dd3fc;
+    overflow-x:auto;
+  }
+  .legend{
+    display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
+    max-width:900px; margin:20px auto 0;
+  }
+  .legend span{
+    font-size:0.72rem; font-weight:700; padding:5px 11px; border-radius:20px;
+    display:flex; align-items:center; gap:6px;
+    background:var(--card); border:1px solid var(--border); color:var(--text-dim);
+  }
+  .legend i{width:8px; height:8px; border-radius:50%; display:inline-block;}
+  .recap-track{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:24px;
+  }
+  .recap-step{
+    display:flex; gap:14px; padding:12px 0; border-bottom:1px solid var(--border);
+  }
+  .recap-step:last-child{border-bottom:none;}
+  .recap-num{
+    width:26px; height:26px; border-radius:50%; background:var(--c-pipe); color:#000;
+    display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:800;
+    flex-shrink:0;
+  }
+  .recap-step div p{font-size:0.88rem; color:#d5dae8;}
+  .recap-step div b{color:#fff;}
+  footer{
+    text-align:center; padding:40px 20px 10px; color:var(--text-faint); font-size:0.78rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>DermProto-EDL — Full System Architecture</h1>
+  <p>Few-shot rare-disease classification from medical images, built on a frozen DINOv2 backbone, Prototypical Networks, and an Evidential Deep Learning head that knows when to say "I'm not sure."</p>
+  <div class="legend">
+    <span><i style="background:var(--c-pipe)"></i>Big Picture</span>
+    <span><i style="background:var(--c-cnn)"></i>CNN Basics</span>
+    <span><i style="background:var(--c-dino)"></i>DINOv2 Backbone</span>
+    <span><i style="background:var(--c-fewshot)"></i>Few-Shot Setup</span>
+    <span><i style="background:var(--c-proto)"></i>Prototypical Networks</span>
+    <span><i style="background:var(--c-edl)"></i>Evidential Deep Learning</span>
+    <span><i style="background:var(--c-eval)"></i>Evaluation Layer</span>
+  </div>
+</header>
+
+<nav class="jump" id="nav">
+  <a href="#overview" data-accent="--c-pipe">Overview</a>
+  <a href="#cnn" data-accent="--c-cnn">1 · CNN Basics</a>
+  <a href="#dino" data-accent="--c-dino">2 · DINOv2</a>
+  <a href="#fewshot" data-accent="--c-fewshot">3 · Few-Shot</a>
+  <a href="#proto" data-accent="--c-proto">4 · Prototypical Nets</a>
+  <a href="#edl" data-accent="--c-edl">5 · Evidential DL</a>
+  <a href="#walkthrough" data-accent="--c-pipe">6 · Full Walkthrough</a>
+  <a href="#eval" data-accent="--c-eval">7 · Evaluation</a>
+</nav>
+
+<main>
+
+<!-- ===================== OVERVIEW ===================== -->
+<section id="overview" style="--accent:var(--c-pipe)">
+  <span class="tag">Big Picture</span>
+  <h2>The whole system in one glance</h2>
+  <p class="subtitle">Every stage below is explained in detail further down. This is the map — refer back to it any time you lose track of where a concept lives.</p>
+
+  <div class="diagram">
+    <div class="dlabel">End-to-end architecture</div>
+    <div class="pipeline wrap">
+      <div class="pbox">Raw Images<small>5 support + 1 query</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Frozen DINOv2<small>ViT backbone</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Embeddings<small>one vector per image</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Prototype + σ<sub>k</sub><small>mean & spread of support</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Query Distance<small>Euclidean, to prototype</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Evidential Head<small>evidence → Dirichlet</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Probability + Uncertainty<small>p, u</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-pipe)">Decision<small>diagnose OR refer</small></div>
+    </div>
+  </div>
+
+  <div class="explain-grid">
+    <div class="ecard" style="--accent:var(--c-pipe)">
+      <h4>The core problem being solved</h4>
+      <p>Rare diseases have almost no labeled images — sometimes single digits per condition. Standard deep learning needs thousands of examples per class, so it simply cannot be trained the normal way here.</p>
+    </div>
+    <div class="ecard" style="--accent:var(--c-pipe)">
+      <h4>The core idea, in one sentence</h4>
+      <p>Borrow a backbone that already understands general images (DINOv2), compare a new photo to a handful of references using distance (Prototypical Networks), and wrap the whole decision in a confidence estimate that can honestly say "not sure" (Evidential Deep Learning).</p>
+    </div>
+    <div class="ecard" style="--accent:var(--c-pipe)">
+      <h4>What makes this a thesis-worthy system</h4>
+      <p>Each of the three ideas exists in prior work separately. The novel piece — covered in Part 4 and 5 — is fusing support-set <b>dispersion</b> into the evidence computation itself, so uncertainty reflects not just "how far is the query" but "how trustworthy was the reference set."</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 1: CNN ===================== -->
+<section id="cnn" style="--accent:var(--c-cnn)">
+  <span class="tag">Part 1</span>
+  <h2>CNN Basics — how a machine "sees" an image at all</h2>
+  <p class="subtitle">ELI5: a CNN slides tiny pattern-detectors across a photo, then stacks the detections into bigger and bigger patterns — edges become textures, textures become shapes, shapes become objects.</p>
+
+  <div class="diagram">
+    <div class="dlabel">Classic CNN architecture</div>
+    <div class="pipeline wrap">
+      <div class="pbox">Input Image<small>H × W × 3 (RGB)</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Conv Layer<small>filters detect edges/textures</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Pooling<small>shrink, keep strongest signal</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Conv + Pool<small>(repeated, deeper patterns)</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Flatten<small>grid → single long vector</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Fully Connected<small>combine everything</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-cnn)">Class Scores</div>
+    </div>
+  </div>
+
+  <div class="explain-grid">
+    <div class="ecard">
+      <h4>What's actually happening</h4>
+      <p>A <b>convolution</b> is a small grid of numbers (a filter) slid across every position of the image, multiplying and summing as it goes. One filter might light up wherever it sees a vertical edge; another lights up for a certain color blob.</p>
+      <p><b>Pooling</b> just shrinks the resulting grid, keeping only the strongest response in each small region — this makes the network care less about exact pixel position and more about "was this pattern present somewhere around here."</p>
+    </div>
+    <div class="ecard">
+      <h4>Why it exists — what breaks without it</h4>
+      <p>If you fed raw pixels straight into a plain fully-connected layer, the network would need a separate weight for every pixel-to-pixel relationship — millions of parameters, and it would treat a cat's ear in the top-left as a totally different pattern than the same ear in the bottom-right.</p>
+      <p>Convolution reuses the same small filter everywhere in the image, so it detects "an edge" regardless of where it appears. This is what makes CNNs trainable on images at all.</p>
+    </div>
+    <div class="ecard">
+      <h4>Where this fits in our pipeline</h4>
+      <p>We do <b>not</b> train a CNN from scratch for the disease classes — we don't have the thousands of images that requires. But every idea here (filters detecting patterns, stacking simple→complex features) is the ancestor of DINOv2 in Part 2, which uses a different internal design (transformer, not convolution) but solves the exact same underlying job: turn pixels into meaningful features.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 2: DINOv2 ===================== -->
+<section id="dino" style="--accent:var(--c-dino)">
+  <span class="tag">Part 2</span>
+  <h2>DINOv2 — the frozen feature extractor (backbone)</h2>
+  <p class="subtitle">ELI5: DINOv2 is a pre-trained "master eye" that already learned what images generally look like, by studying millions of unlabeled photos and being trained to recognize the same photo under different crops and lighting.</p>
+
+  <div class="diagram">
+    <div class="dlabel">Vision Transformer (ViT) architecture</div>
+    <div class="pipeline wrap">
+      <div class="pbox">Image<small>e.g. 224×224</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Patchify<small>split into 16×16 tiles</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Patch Embedding<small>tile → vector</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">+ Position Info<small>where each tile was</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Transformer Blocks × N<small>self-attention + MLP</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-dino)">Embedding Vector<small>e.g. 768 numbers, one per image</small></div>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="dlabel">Inside one transformer block: self-attention</div>
+    <div class="pipeline wrap">
+      <div class="pbox">All Patch Vectors</div>
+      <div class="parrow">→</div>
+      <div class="pbox">Query, Key, Value<small>3 projections of each patch</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Attention Weights<small>"which patches matter to this one"</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-dino)">Context-Aware Patches<small>each patch now "knows" the others</small></div>
+    </div>
+  </div>
+
+  <div class="explain-grid">
+    <div class="ecard">
+      <h4>What it is</h4>
+      <p>A <b>tensor</b> is just a grid of numbers with some number of dimensions — a photo is a 3D tensor (height × width × color channels). An <b>embedding</b> is what you get after squeezing all that raw pixel information down into a much shorter list of numbers (e.g. 768) that captures the image's meaning rather than its raw pixels — visually or semantically similar images land near each other in this "latent space."</p>
+      <p><b>Self-attention</b> lets every image patch look at every other patch and decide how relevant they are to each other — this is how the model figures out that a lesion's texture depends on the surrounding skin, not just the pixels directly under it.</p>
+    </div>
+    <div class="ecard">
+      <h4>Why it exists — what breaks without it</h4>
+      <p>DINOv2 was trained <b>self-supervised</b> — no human labels at all. It was shown different crops/views of the same unlabeled image and trained to produce consistent embeddings for both. Across millions of images, this forces it to learn general-purpose visual structure.</p>
+      <p><b>Backbone freezing</b>: once loaded, we lock DINOv2's weights and never update them again. With only 5 images per disease, letting a huge network keep adjusting would make it instantly memorize those 5 photos rather than learn the disease pattern — this is catastrophic overfitting. Freezing forces all the real learning to happen in the small heads downstream.</p>
+    </div>
+    <div class="ecard">
+      <h4>Where this fits in our pipeline</h4>
+      <p>This is <b>Stage 1</b> of the real pipeline. Every one of our 5 reference photos, and the 1 new query photo, gets pushed through this exact frozen DINOv2 and comes out as a single embedding vector. From this point on, nothing downstream ever looks at raw pixels again — only these vectors.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 3: FEW-SHOT ===================== -->
+<section id="fewshot" style="--accent:var(--c-fewshot)">
+  <span class="tag">Part 3</span>
+  <h2>Few-Shot Learning Setup — training to learn from almost nothing</h2>
+  <p class="subtitle">ELI5: instead of training on one giant fixed task, the model practices thousands of tiny "pop quizzes" — each one just a handful of example photos plus one new photo to classify — so it gets good at the *skill* of learning from few examples.</p>
+
+  <div class="diagram">
+    <div class="dlabel">N-way K-shot episode structure</div>
+    <div class="pipeline wrap">
+      <div class="pbox">Pick N classes<small>N-way</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">K examples each<small>K-shot → Support Set</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Q new examples<small>→ Query Set</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-fewshot)">One "Episode"<small>a full mini training task</small></div>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="dlabel">Episodic training loop</div>
+    <div class="pipeline wrap">
+      <div class="pbox">Large pool<small>many "seen" disease classes</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Sample new episode<small>random N classes each time</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Solve it, measure loss<small>on the query set</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Update small heads<small>backbone stays frozen</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-fewshot)">Repeat<small>thousands of episodes</small></div>
+    </div>
+  </div>
+
+  <div class="callout" style="--accent:var(--c-fewshot)">
+    <span class="star">Running example, mapped in</span>
+    <p>Our real diagnosis scenario is exactly one episode: <b>N=1</b> disease class, <b>K=5</b> support (reference) photos, and a query set of <b>1</b> new photo. The model was trained on thousands of episodes shaped exactly like this, just using different, more common diseases as stand-ins during training — so it has effectively "practiced this exact situation" thousands of times before ever seeing the real rare disease.</p>
+  </div>
+
+  <div class="explain-grid">
+    <div class="ecard">
+      <h4>What it is</h4>
+      <p>The <b>support set</b> is the labeled reference photos you're allowed to look at (our 5 photos). The <b>query set</b> is the new, unlabeled photo(s) you must classify using only what you saw in the support set (our 1 new photo).</p>
+      <p><b>Data augmentation</b> (random crops, flips, color jitter) is applied to the support images to synthetically stretch 5 real photos into a more varied, more representative sample of what that disease can look like.</p>
+    </div>
+    <div class="ecard">
+      <h4>Why it exists — what breaks without it</h4>
+      <p>Ordinary training assumes you'll see a class thousands of times before being tested on it. Real deployment here breaks that assumption completely — the rare disease at test time may have never been seen during training at all.</p>
+      <p>Episodic training fixes this mismatch by making <b>every training step already look like the real test</b>: few examples in, one new example to classify. The model never gets the luxury of memorizing a class — it's forced to learn a general strategy for comparing few examples to a new one.</p>
+    </div>
+    <div class="ecard">
+      <h4>Where this fits in our pipeline</h4>
+      <p>This defines the <b>shape</b> of every training step, and it's also literally the shape of inference. Once embeddings exist for the 5 support photos and 1 query photo (Part 2's output), Part 4 (Prototypical Networks) is what actually solves this specific episode.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 4: PROTOTYPICAL ===================== -->
+<section id="proto" style="--accent:var(--c-proto)">
+  <span class="tag">Part 4</span>
+  <h2>Prototypical Networks — classifying by distance, not by weights</h2>
+  <p class="subtitle">ELI5: average your 5 reference photos into one "typical" point in embedding space (the prototype), then measure how far the new photo lands from that point. Close = same disease. Far = probably not.</p>
+
+  <div class="diagram">
+    <div class="dlabel">Core prototypical mechanism</div>
+    <div class="pipeline wrap">
+      <div class="pbox">5 Support Embeddings<small>one class, K=5</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Mean (average)</div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-proto)">Prototype c<sub>k</sub><small>the "center" of the class</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Euclidean Distance<small>to query embedding</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Distance per class<small>repeated for every candidate class</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-proto)">Class Likelihood<small>smaller distance = more likely</small></div>
+    </div>
+  </div>
+
+  <div class="callout" style="--accent:var(--c-proto)">
+    <span class="star">★ Your novel contribution — support-set dispersion (σ<sub>k</sub>)</span>
+    <p><b>The gap in standard Prototypical Networks:</b> the original method treats every prototype as equally trustworthy. A prototype built from 5 nearly-identical reference photos gets the exact same weight as one built from 5 wildly inconsistent-looking photos. For rare diseases — where presentation genuinely varies a lot between patients — that's a blind spot: a "loose," scattered reference set is a much shakier basis for a confident diagnosis than a "tight" one, and the standard architecture has no way to express that difference.</p>
+    <p><b>The fix:</b> alongside the prototype (the <i>mean</i> of the 5 support embeddings), also compute their <b>dispersion σ<sub>k</sub></b> — how spread out those 5 embeddings are around their own average (e.g. their variance, or the average pairwise distance between them).</p>
+    <div class="diagram" style="margin:14px 0 4px; --accent:var(--c-proto)">
+      <div class="dlabel">Two signals computed from the same support set</div>
+      <div class="branch-row">
+        <span class="branch-tag">Branch A</span>
+        <div class="pbox">5 Support Embeddings</div><div class="parrow">→</div>
+        <div class="pbox">Mean</div><div class="parrow">→</div>
+        <div class="pbox">Prototype c<sub>k</sub></div><div class="parrow">→</div>
+        <div class="pbox">Distance to query</div>
+      </div>
+      <div class="branch-row">
+        <span class="branch-tag">Branch B</span>
+        <div class="pbox">5 Support Embeddings</div><div class="parrow">→</div>
+        <div class="pbox">Spread around mean</div><div class="parrow">→</div>
+        <div class="pbox" style="border-color:var(--c-proto)">Dispersion σ<sub>k</sub></div>
+      </div>
+      <div class="merge-box">Both signals feed together into the Evidential Head → Part 5</div>
+    </div>
+    <p><b>Intuition:</b> distance-to-query tells you about the <i>query</i>. Dispersion tells you about how much to trust the <i>reference set itself</i>. A close distance means little if σ<sub>k</sub> is high — the "close match" might just be luck against a noisy, disagreeing set of references. Fusing both is what lets the final uncertainty score reflect evidence <i>reliability</i>, not just raw closeness.</p>
+  </div>
+
+  <div class="explain-grid">
+    <div class="ecard">
+      <h4>What it is</h4>
+      <p>A <b>prototype</b> is nothing fancy — literally the coordinate-wise average of the support embeddings for one class. <b>Euclidean distance</b> is the plain straight-line distance between two vectors, same idea as distance between two points on a map, just in a higher-dimensional space.</p>
+    </div>
+    <div class="ecard">
+      <h4>Why it exists — what breaks without it</h4>
+      <p>Ordinary classifiers learn a fixed decision boundary per class from thousands of examples. With 5 examples, there isn't enough data to learn a boundary — but there <i>is</i> enough to compute a reasonable average position. Metric-based comparison sidesteps the "not enough data to learn weights" problem entirely by turning classification into geometry instead.</p>
+    </div>
+    <div class="ecard">
+      <h4>Where this fits in our pipeline</h4>
+      <p>This is <b>Stage 2</b> of the real pipeline, right after embeddings exist. Its two outputs — distance and σ<sub>k</sub> — are exactly the two inputs the Evidential Head in Part 5 needs to produce a trustworthy confidence score.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 5: EDL ===================== -->
+<section id="edl" style="--accent:var(--c-edl)">
+  <span class="tag">Part 5</span>
+  <h2>Evidential Deep Learning — turning distance into honest confidence</h2>
+  <p class="subtitle">ELI5: instead of forcing the model to always output "I'm 100% sure it's one of these," it collects "evidence" for each class, and if there just isn't much evidence anywhere, it openly says so — that's the mechanism behind "ask a doctor."</p>
+
+  <div class="diagram">
+    <div class="dlabel">Evidential head architecture</div>
+    <div class="pipeline wrap">
+      <div class="pbox">Distance + σ<sub>k</sub><small>from Part 4</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">Evidence Combiner</div>
+      <div class="parrow">→</div>
+      <div class="pbox">Evidence e<sub>k</sub><small>≥ 0, via softplus/ReLU</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">α<sub>k</sub> = e<sub>k</sub> + 1<small>Dirichlet parameters</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox">S = Σ α<sub>k</sub></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-edl)">p<sub>k</sub> = α<sub>k</sub>/S<small>probability</small></div>
+      <div class="parrow">→</div>
+      <div class="pbox" style="border-color:var(--c-edl)">u = K/S<small>uncertainty</small></div>
+    </div>
+  </div>
+
+  <div class="formula">
+  evidence:      e_k = f(distance_k, σ_k)     — e_k ≥ 0, low distance + low σ_k → high e_k
+  Dirichlet:     α_k = e_k + 1
+  total mass:    S   = Σ_k α_k
+  probability:   p_k = α_k / S
+  uncertainty:   u   = K / S      (K = number of classes)
+  </div>
+
+  <div class="explain-grid">
+    <div class="ecard">
+      <h4>What it is</h4>
+      <p><b>Evidence e<sub>k</sub></b> is an amount, not a probability — it can be genuinely near-zero if nothing supports that class. A <b>Dirichlet distribution</b> is a "distribution over distributions": instead of outputting one fixed probability per class, the model outputs parameters (α<sub>k</sub>) describing a whole range of plausible probability distributions — how tight or spread that range is directly tells you the model's confidence.</p>
+      <p>The <b>uncertainty score u = K/S</b> is elegantly simple: when there's zero real evidence anywhere, S collapses to just K (the "+1" priors), making u = 1 — maximum uncertainty. As real evidence accumulates for some class, S grows and u shrinks toward 0.</p>
+    </div>
+    <div class="ecard">
+      <h4>Why it exists — what breaks without it</h4>
+      <p>A normal softmax output is forced to sum to 100% no matter what — even total nonsense input gets some confident-looking probability distribution out. Softmax has no way to express "I found nothing convincing." EDL fixes this by making the total "mass" itself variable (via S), so genuinely weak evidence produces genuinely high uncertainty instead of a falsely confident guess.</p>
+      <p><b>KL-divergence regularization</b> adds a loss term that specifically shrinks evidence generated for the <i>wrong</i> classes toward zero, without punishing evidence for the right one — this is what teaches the model to be selectively confident instead of just maximizing evidence everywhere. <b>KL annealing</b> ramps this penalty up slowly over training, because applying it at full strength from step one would just teach the model to output zero evidence for everything — permanently "unsure" and useless. It has to learn to classify first, then learn humility.</p>
+    </div>
+    <div class="ecard">
+      <h4>Where this fits in our pipeline</h4>
+      <p>This is <b>Stage 3</b>, the final scoring stage. It's also where your novel σ<sub>k</sub> signal actually pays off: it doesn't just adjust the predicted class, it directly shapes e<sub>k</sub>, which directly shapes u — meaning the uncertainty score genuinely reflects "was the reference set itself reliable," not only "was the query close."</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 6: WALKTHROUGH ===================== -->
+<section id="walkthrough" style="--accent:var(--c-pipe)">
+  <span class="tag">Part 6</span>
+  <h2>Full pipeline walkthrough — tracing the running example</h2>
+  <p class="subtitle">5 reference photos of a rare skin condition, 1 new photo to diagnose — followed from raw pixels to final decision.</p>
+
+  <div class="recap-track">
+    <div class="recap-step">
+      <div class="recap-num">1</div>
+      <div><p><b>Raw input.</b> 5 reference photos (support set, K=5) of the rare skin condition, plus 1 new photo (query) whose diagnosis is unknown. All 6 images are just pixel grids so far.</p></div>
+    </div>
+    <div class="recap-step">
+      <div class="recap-num">2</div>
+      <div><p><b>Frozen DINOv2 backbone.</b> Each of the 6 images is patchified, passed through self-attention transformer blocks, and reduced to one embedding vector each. Backbone weights never change — no learning happens here, only feature extraction. Output: 5 support embeddings + 1 query embedding.</p></div>
+    </div>
+    <div class="recap-step">
+      <div class="recap-num">3</div>
+      <div><p><b>Prototype + dispersion.</b> The 5 support embeddings are averaged into one prototype vector c<sub>k</sub> for this disease, and their spread around that average is measured as σ<sub>k</sub>. A tight cluster of 5 references → low σ<sub>k</sub> → this reference set is trustworthy. A scattered cluster → high σ<sub>k</sub> → treat matches against it with caution.</p></div>
+    </div>
+    <div class="recap-step">
+      <div class="recap-num">4</div>
+      <div><p><b>Query distance.</b> The Euclidean distance between the query embedding and the prototype c<sub>k</sub> is computed — how far is this new photo from "typical" for this disease.</p></div>
+    </div>
+    <div class="recap-step">
+      <div class="recap-num">5</div>
+      <div><p><b>Evidential head.</b> Distance and σ<sub>k</sub> are combined into evidence e<sub>k</sub>. This becomes a Dirichlet parameter α<sub>k</sub> = e<sub>k</sub> + 1, and combined across all candidate classes into S = Σα<sub>k</sub>.</p></div>
+    </div>
+    <div class="recap-step">
+      <div class="recap-num">6</div>
+      <div><p><b>Output.</b> Predicted probability p<sub>k</sub> = α<sub>k</sub>/S and uncertainty u = K/S are produced together.</p></div>
+    </div>
+    <div class="recap-step">
+      <div class="recap-num">7</div>
+      <div><p><b>Final decision.</b> If u is below the chosen threshold, the system outputs the diagnosis with its confidence score. If u is above the threshold — whether because the query was genuinely far from the prototype, or because the 5 reference photos disagreed with each other too much — the system refuses to guess and defers: "not confident enough, ask a doctor."</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PART 7: EVAL ===================== -->
+<section id="eval" style="--accent:var(--c-eval)">
+  <span class="tag">Part 7</span>
+  <h2>Evaluation & Clinical Metrics Layer</h2>
+  <p class="subtitle">How you prove the uncertainty score is actually trustworthy, not just decorative.</p>
+
+  <div class="explain-grid">
+    <div class="ecard">
+      <h4>Selective classification</h4>
+      <p>Instead of forcing an answer for every input, the system is allowed a "reject / refer to human" option whenever u exceeds a threshold. Evaluated by plotting accuracy-vs-coverage: how much does accuracy improve as you allow the system to reject more cases?</p>
+    </div>
+    <div class="ecard">
+      <h4>Expected Calibration Error (ECE)</h4>
+      <p>Checks whether stated confidence matches real accuracy — if the model says "90% confident" a thousand times, was it actually right about 90% of those times? Low ECE = trustworthy confidence numbers.</p>
+    </div>
+    <div class="ecard">
+      <h4>Macro F1-score</h4>
+      <p>Averages the F1-score of every class equally, regardless of how many support examples each disease has. Critical here because rare-disease datasets are extremely imbalanced — a plain accuracy number would be dominated by whichever class has more data.</p>
+    </div>
+    <div class="ecard">
+      <h4>Out-of-distribution (OOD) detection</h4>
+      <p>Tests the system on images that don't belong to any trained disease category at all (e.g. a normal mole, or an unrelated photo). The uncertainty score doubles as a natural OOD detector: a genuinely novel input should also produce low evidence and high u, without needing a separate mechanism.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>DermProto-EDL · System architecture reference · built for thesis work</footer>
+
+<script>
+  const links = document.querySelectorAll('nav.jump a');
+  const sections = [...links].map(a => document.querySelector(a.getAttribute('href')));
+  const setAccent = (a) => {
+    document.documentElement.style.setProperty('--nav-accent', getComputedStyle(document.documentElement).getPropertyValue(a.dataset.accent));
+  };
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if(entry.isIntersecting){
+        const id = '#' + entry.target.id;
+        links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === id));
+      }
+    });
+  }, {rootMargin: '-40% 0px -50% 0px'});
+  sections.forEach(s => s && obs.observe(s));
+</script>
+
+</body>
+</html>
