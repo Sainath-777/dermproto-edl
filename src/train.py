@@ -104,12 +104,11 @@ def main():
 
     run_name = config["wandb"].get("name", f"ablation-{uncertainty_mode}")
     wandb.init(
-        project=config["wandb"]["project"],
-        entity=config["wandb"]["entity"],
+        project=config["wandb"].get("project", "dermproto-edl"),
+        entity=config["wandb"].get("entity"),
         name=run_name,
         config=config
     )
-
     if args.mode == "train":
         train_model(
             model=model,
