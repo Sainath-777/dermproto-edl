@@ -25,20 +25,22 @@ class BaseSkinDataset(Dataset):
         self.class_names = sorted(list(self.df["label_str"].unique()))
         
         # Mode-based train/val split: 80% train, 20% validation, sorted deterministically by path
-        split_dfs = []
-        for class_name in self.class_names:
-            class_df = self.df[self.df["label_str"] == class_name].copy()
-            class_df = class_df.sort_values(by="image_path").reset_index(drop=True)
-            n = len(class_df)
-            split_idx = int(n * 0.8)
-            if self.mode == 'train':
-                split_dfs.append(class_df.iloc[:split_idx])
-            else:  # val
-                split_dfs.append(class_df.iloc[split_idx:])
+        if self.mode in ('train', 'val'):
+            split_dfs = []
+            for class_name in self.class_names:
+                class_df = self.df[self.df["label_str"] == class_name].copy()
+                class_df = class_df.sort_values(by="image_path").reset_index(drop=True)
+                n = len(class_df)
+                split_idx = int(n * 0.8)
+                if self.mode == 'train':
+                    split_dfs.append(class_df.iloc[:split_idx])
+                else:  # val
+                    split_dfs.append(class_df.iloc[split_idx:])
+            self.df = pd.concat(split_dfs).reset_index(drop=True)
+            self.class_names = sorted(list(self.df["label_str"].unique()))
+        elif self.mode == 'all':
+            pass  # Use all available images, no train/val split (for OOD evaluation)
                 
-        self.df = pd.concat(split_dfs).reset_index(drop=True)
-        self.class_names = sorted(list(self.df["label_str"].unique()))
-        
         # Define class mapping
         self.class_to_idx = {c: i for i, c in enumerate(self.class_names)}
         self.df["label"] = self.df["label_str"].map(self.class_to_idx)
@@ -63,7 +65,7 @@ class BaseSkinDataset(Dataset):
         counts = self.df["label_str"].value_counts()
         for name in self.class_names:
             count = counts.get(name, 0)
-            print(f"Class {name:5s}: {count:5d} images")
+            print(f"Class {name:20s}: {count:5d} images")
         print(f"Total filtered images: {len(self.df)}")
         print("---------------------------------------------------\n")
 
@@ -87,7 +89,6 @@ class BaseSkinDataset(Dataset):
             augmented = self.transform(image=image_np)
             image_tensor = augmented["image"]
         else:
-            # Default fallback to tensor conversion if no transforms provided
             image_tensor = torch.tensor(image_np.transpose(2, 0, 1), dtype=torch.float32) / 255.0
             
         return image_tensor, label
@@ -107,7 +108,6 @@ class HAM10000Dataset(BaseSkinDataset):
             
         df = pd.read_csv(csv_path)
         
-        # Locate image paths across the two subfolders
         image_paths = []
         for _, row in df.iterrows():
             image_id = row["image_id"]
@@ -126,11 +126,98 @@ class HAM10000Dataset(BaseSkinDataset):
         return df[["image_path", "label_str"]]
 
 
+class ISIC2019Dataset(BaseSkinDataset):
+    """
+    Dataset wrapper for ISIC 2019. Decodes one-hot ground truth CSV.
+    """
+    ISIC2019_CLASSES = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
+
+    def __init__(self, root: str, split_classes: list = None, transform=None, mode: str = 'all', verify_distribution: bool = False):
+        if split_classes is None:
+            split_classes = self.ISIC2019_CLASSES
+        super().__init__(root, split_classes, transform, mode, verify_distribution)
+
+    def load_metadata(self) -> pd.DataFrame:
+        csv_path = os.path.join(self.root, "ISIC_2019_Training_GroundTruth.csv")
+        if not os.path.exists(csv_path):
+            alt_csv = os.path.join(self.root, "train.csv")
+            if os.path.exists(alt_csv):
+                csv_path = alt_csv
+            else:
+                raise FileNotFoundError(f"ISIC 2019 metadata CSV not found in {self.root}")
+            
+        df = pd.read_csv(csv_path)
+        class_cols = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC", "UNK"]
+        present_cols = [c for c in class_cols if c in df.columns]
+        
+        # Decode one-hot columns via argmax
+        df["label_str"] = df[present_cols].idxmax(axis=1)
+        df = df[df["label_str"] != "UNK"].reset_index(drop=True)
+        
+        image_col = "image" if "image" in df.columns else df.columns[0]
+        img_dir_1 = os.path.join(self.root, "ISIC_2019_Training_Input")
+        img_dir_2 = os.path.join(self.root, "train")
+        
+        image_paths = []
+        for _, row in df.iterrows():
+            img_name = f"{row[image_col]}.jpg" if not str(row[image_col]).endswith(".jpg") else row[image_col]
+            path1 = os.path.join(img_dir_1, img_name)
+            path2 = os.path.join(img_dir_2, img_name)
+            path_root = os.path.join(self.root, img_name)
+            
+            if os.path.exists(path1):
+                image_paths.append(path1)
+            elif os.path.exists(path2):
+                image_paths.append(path2)
+            elif os.path.exists(path_root):
+                image_paths.append(path_root)
+            else:
+                raise FileNotFoundError(f"ISIC 2019 image {img_name} not found in {self.root}")
+                
+        df["image_path"] = image_paths
+        return df[["image_path", "label_str"]]
+
+
+class SD198Dataset(BaseSkinDataset):
+    """
+    Dataset wrapper for SD-198. Discovers class names from directory structure (no CSV).
+    """
+    def __init__(self, root: str, split_classes: list = None, transform=None, mode: str = 'all', verify_distribution: bool = False, min_images_per_class: int = 10):
+        self.min_images_per_class = min_images_per_class
+        if split_classes is None:
+            split_classes = self._discover_valid_classes(root, min_images_per_class)
+        super().__init__(root, split_classes, transform, mode, verify_distribution)
+
+    def _discover_valid_classes(self, root: str, min_count: int) -> list:
+        valid = []
+        if not os.path.isdir(root):
+            raise FileNotFoundError(f"SD-198 root directory not found: {root}")
+        for class_name in sorted(os.listdir(root)):
+            class_dir = os.path.join(root, class_name)
+            if not os.path.isdir(class_dir):
+                continue
+            imgs = [f for f in os.listdir(class_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            if len(imgs) >= min_count:
+                valid.append(class_name)
+        print(f"SD-198: Found {len(valid)} classes with >= {min_count} images.")
+        return valid
+
+    def load_metadata(self) -> pd.DataFrame:
+        records = []
+        for class_name in sorted(os.listdir(self.root)):
+            class_dir = os.path.join(self.root, class_name)
+            if not os.path.isdir(class_dir):
+                continue
+            for fname in os.listdir(class_dir):
+                if fname.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    records.append({
+                        "image_path": os.path.join(class_dir, fname),
+                        "label_str": class_name
+                    })
+        return pd.DataFrame(records)
+
+
 def build_transforms(mode: str) -> A.Compose:
-    """
-    Build transform pipeline using Albumentations.
-    Uses standard DINOv2 / ImageNet normalization parameters.
-    """
     if mode == "train":
         return A.Compose([
             A.Resize(224, 224),
@@ -147,54 +234,3 @@ def build_transforms(mode: str) -> A.Compose:
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ToTensorV2()
         ])
-
-
-def generate_mock_dataset(root_path: str):
-    """
-    Generates a small mock dataset locally for testing/compilation checks.
-    """
-    os.makedirs(root_path, exist_ok=True)
-    img_dir_1 = os.path.join(root_path, "HAM10000_images_part_1")
-    img_dir_2 = os.path.join(root_path, "HAM10000_images_part_2")
-    os.makedirs(img_dir_1, exist_ok=True)
-    os.makedirs(img_dir_2, exist_ok=True)
-    
-    csv_path = os.path.join(root_path, "HAM10000_metadata.csv")
-    if not os.path.exists(csv_path):
-        print("Generating mock HAM10000 metadata and images locally...")
-        classes = ["nv", "mel", "bkl", "bcc", "akiec", "df", "vasc"]
-        data = []
-        for i in range(100):
-            image_id = f"ISIC_00{24306 + i}"
-            lesion_id = f"HAM_00{10000 + i // 2}"
-            dx = classes[i % len(classes)]
-            target_dir = img_dir_1 if i % 2 == 0 else img_dir_2
-            img_path = os.path.join(target_dir, f"{image_id}.jpg")
-            
-            # Create a dummy image (100x100 RGB color block)
-            if not os.path.exists(img_path):
-                img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-                Image.fromarray(img).save(img_path)
-                
-            data.append({
-                "lesion_id": lesion_id,
-                "image_id": image_id,
-                "dx": dx,
-                "dx_type": "consensus",
-                "age": 50.0,
-                "sex": "male",
-                "localization": "back"
-            })
-            
-        df = pd.DataFrame(data)
-        df.to_csv(csv_path, index=False)
-        print(f"Mock dataset generated successfully at: {root_path}")
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mock_dir", type=str, default="data/raw")
-    args = parser.parse_args()
-    
-    generate_mock_dataset(args.mock_dir)
-    print("Mock generation check completed!")

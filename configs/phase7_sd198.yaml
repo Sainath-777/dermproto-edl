@@ -1,0 +1,32 @@
+seed: 42
+backbone:
+  name: "dinov2_vits14"
+  pretrained: true
+  freeze: true
+  embedding_dim: 384
+
+episode:
+  k_way: 5
+  n_shot: 5
+  n_query: 5                  # Set n_query=5 per decision (evaluates 80+ classes)
+  distance_metric: "euclidean"
+  num_eval_episodes: 600
+
+edl:
+  hidden_dim: 64
+  use_dispersion: true
+
+dataset:
+  name: "sd198"
+  min_images_per_class: 10   # Requires 10 images (5 support + 5 query)
+  mode: "all"
+
+paths:
+  data_raw: "data/raw"
+  checkpoints: "experiments/phase4_checkpoints"
+  output_dir: "experiments/phase7_results/sd198"
+
+wandb:
+  project: "dermproto-edl"
+  entity: null
+  run_name: "phase7_sd198"
