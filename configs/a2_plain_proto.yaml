@@ -1,4 +1,3 @@
-# A2 Ablation: Plain ProtoNet (No EDL Head, CrossEntropy Loss)
 seed: 42
 backbone:
   name: "dinov2_vits14"
@@ -15,6 +14,9 @@ episode:
 edl:
   hidden_dim: 64
   use_dispersion: false
+  kl_annealing_start: 0
+  kl_annealing_end: 500
+  kl_max_weight: 0.1
 
 training:
   lr: 0.00015
@@ -23,7 +25,7 @@ training:
   scheduler: "steplr"
   scheduler_step_size: 30
   scheduler_gamma: 0.5
-  epochs: 1 # Pure evaluation run
+  epochs: 1
   episodes_per_epoch: 100
   val_every: 1
   val_episodes: 50
@@ -37,9 +39,10 @@ dataset:
 wandb:
   project: "dermproto-edl"
   name: "ablation-a2-plain-proto"
+  entity: null
 
 paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
   checkpoints: "experiments/ablation_a2_plain_proto"
-  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"s
+  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
