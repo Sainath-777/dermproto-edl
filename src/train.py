@@ -102,7 +102,7 @@ def main():
         edl_head=edl_head
     )
 
-    run_name = config["wandb"].get("name", f"ablation-{uncertainty_mode}")
+    run_name = config["wandb"].get("name", f"phase4-edl-training")
     wandb.init(
         project=config["wandb"].get("project", "dermproto-edl"),
         entity=config["wandb"].get("entity"),
@@ -159,10 +159,7 @@ def train_model(model, edl_head, temp_head, train_sampler, val_sampler, optimize
         if temp_head is not None:
             temp_head.train()
         
-        epoch_losses = []
-        epoch_accs = []
-        epoch_mses = []
-        epoch_kls = []
+        epoch_losses, epoch_accs, epoch_mses, epoch_kls = [], [], [], []
         
         for ep_idx in range(ep_per_epoch):
             global_episode = (epoch - 1) * ep_per_epoch + ep_idx
@@ -188,14 +185,12 @@ def train_model(model, edl_head, temp_head, train_sampler, val_sampler, optimize
                 loss, mse, kl, kl_w = edl_loss(probs, alpha, query_labels, global_episode, kl_start, kl_end, kl_max)
                 epoch_mses.append(mse.item())
                 epoch_kls.append(kl.item())
-
             elif uncertainty_mode == "temp_scaled":
                 out = temp_head(dists)
                 probs = out["probs"]
                 criterion = nn.CrossEntropyLoss()
                 loss = criterion(out["logits"], query_labels)
                 kl_w = 0.0
-
             elif uncertainty_mode == "plain_proto":
                 logits = -dists
                 probs = torch.softmax(logits, dim=-1)
@@ -284,29 +279,38 @@ def train_model(model, edl_head, temp_head, train_sampler, val_sampler, optimize
                 best_val_acc = mean_val_acc
                 checkpoint_data = {
                     "epoch": epoch,
+                    "total_epochs": total_epochs,
                     "model_state_dict": model.state_dict(),
                     "edl_head_state_dict": edl_head.state_dict() if edl_head else None,
                     "temp_head_state_dict": temp_head.state_dict() if temp_head else None,
+                    "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
+                    "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
                     "best_val_acc": best_val_acc,
                     "config": config
                 }
                 checkpoint_path = os.path.join(checkpoint_dir, f"best_model_epoch{epoch}_acc{mean_val_acc:.4f}.pt")
+                canonical_path = os.path.join(checkpoint_dir, "best_model.pt")
                 torch.save(checkpoint_data, checkpoint_path)
-                print(f" >>> New best validation accuracy saved at: {checkpoint_path}")
+                torch.save(checkpoint_data, canonical_path)
+                print(f" >>> New best validation accuracy saved at: {checkpoint_path} and {canonical_path}")
                 wandb.save(checkpoint_path)
+                wandb.save(canonical_path)
 
         latest_data = {
             "epoch": epoch,
+            "total_epochs": total_epochs,
             "model_state_dict": model.state_dict(),
             "edl_head_state_dict": edl_head.state_dict() if edl_head else None,
             "temp_head_state_dict": temp_head.state_dict() if temp_head else None,
+            "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
+            "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
             "best_val_acc": best_val_acc,
             "config": config
         }
         latest_path = os.path.join(checkpoint_dir, "latest_checkpoint.pt")
         torch.save(latest_data, latest_path)
 
-    print("\nAblation Run Completed!")
+    print("\nTraining Completed!")
     wandb.finish()
 
 if __name__ == "__main__":
