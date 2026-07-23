@@ -8,7 +8,7 @@ backbone:
 episode:
   k_way: 5
   n_shot: 5
-  n_query: 5                  # Set n_query=5 per decision (evaluates 80+ classes)
+  n_query: 5
   distance_metric: "euclidean"
   num_eval_episodes: 600
 
@@ -18,13 +18,15 @@ edl:
 
 dataset:
   name: "sd198"
-  min_images_per_class: 10   # Requires 10 images (5 support + 5 query)
+  min_images_per_class: 10
   mode: "all"
 
 paths:
   data_raw: "data/raw"
   checkpoints: "experiments/phase4_checkpoints"
   output_dir: "experiments/phase7_results/sd198"
+  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
+  kaggle_sd198: "/kaggle/input/sd-198"
 
 wandb:
   project: "dermproto-edl"

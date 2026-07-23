@@ -16,12 +16,18 @@ def set_seed(seed: int = 42):
 
 def resolve_data_root(config: dict) -> str:
     local_path = config["paths"]["data_raw"]
-    kaggle_path = config["paths"]["kaggle_ham10000"]
+    # Check dataset-specific Kaggle paths dynamically
+    kaggle_path = (
+        config["paths"].get("kaggle_isic2019") or 
+        config["paths"].get("kaggle_sd198") or 
+        config["paths"].get("kaggle_ham10000") or
+        config["paths"].get("kaggle_path")
+    )
     
     if os.path.exists(local_path) and len(os.listdir(local_path)) > 0:
         print(f"Data root resolved locally: {local_path}")
         return local_path
-    elif os.path.exists(kaggle_path):
+    elif kaggle_path and os.path.exists(kaggle_path):
         print(f"Data root resolved on Kaggle: {kaggle_path}")
         return kaggle_path
     else:
