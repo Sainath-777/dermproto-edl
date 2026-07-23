@@ -26,7 +26,7 @@ paths:
   checkpoints: "experiments/phase4_checkpoints"
   output_dir: "experiments/phase7_results/sd198"
   kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
-  kaggle_sd198: "/kaggle/input/sd-198"
+  kaggle_sd198: "/kaggle/input/datasets/longngzzz/sd-198"
 
 wandb:
   project: "dermproto-edl"
