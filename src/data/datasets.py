@@ -24,7 +24,6 @@ def find_csv_metadata(root: str, required_cols: list = None, keywords: list = No
     if not candidates:
         raise FileNotFoundError(f"No CSV files found in dataset root directory: {root}")
         
-    # Prioritize candidates matching keywords (case-insensitive)
     matching_keyword_candidates = []
     for cand in candidates:
         cand_name = os.path.basename(cand).lower()
@@ -33,7 +32,6 @@ def find_csv_metadata(root: str, required_cols: list = None, keywords: list = No
             
     pool = matching_keyword_candidates if matching_keyword_candidates else candidates
     
-    # If required columns specified, check candidate CSV headers
     if required_cols:
         for cand in pool:
             try:
@@ -49,11 +47,6 @@ def find_csv_metadata(root: str, required_cols: list = None, keywords: list = No
 
 
 def build_image_map(root: str, valid_exts: tuple = (".jpg", ".jpeg", ".png", ".JPG", ".PNG", ".JPEG")) -> dict:
-    """
-    Recursively scans `root` once to build an in-memory mapping from:
-      - filename with extension (e.g. 'ISIC_0000000.jpg') -> full_path
-      - filename stem without extension (e.g. 'ISIC_0000000') -> full_path
-    """
     image_map = {}
     for dirpath, _, filenames in os.walk(root):
         for fname in filenames:
@@ -76,14 +69,11 @@ class BaseSkinDataset(Dataset):
         self.transform = transform
         self.mode = mode
         
-        # Load and filter raw metadata (to be defined by subclass)
         raw_df = self.load_metadata()
         
-        # Filter for active split classes
         self.df = raw_df[raw_df["label_str"].isin(self.split_classes)].reset_index(drop=True)
         self.class_names = sorted(list(self.df["label_str"].unique()))
         
-        # Mode-based train/val split: 80% train, 20% validation, sorted deterministically by path
         if self.mode in ('train', 'val'):
             split_dfs = []
             for class_name in self.class_names:
@@ -98,13 +88,11 @@ class BaseSkinDataset(Dataset):
             self.df = pd.concat(split_dfs).reset_index(drop=True)
             self.class_names = sorted(list(self.df["label_str"].unique()))
         elif self.mode == 'all':
-            pass  # Use all available images, no train/val split (for OOD evaluation)
+            pass  # Use all available images
                 
-        # Define class mapping
         self.class_to_idx = {c: i for i, c in enumerate(self.class_names)}
         self.df["label"] = self.df["label_str"].map(self.class_to_idx)
         
-        # Group indices by class for fast episodic sampling
         self.class_indices = {
             c: self.df[self.df["label_str"] == c].index.tolist() 
             for c in self.class_names
@@ -114,9 +102,6 @@ class BaseSkinDataset(Dataset):
             self.print_distribution()
             
     def load_metadata(self) -> pd.DataFrame:
-        """
-        Loads metadata. Must return a DataFrame with columns: ['image_path', 'label_str']
-        """
         raise NotImplementedError("Subclasses must implement load_metadata()")
         
     def print_distribution(self):
@@ -139,11 +124,9 @@ class BaseSkinDataset(Dataset):
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at path: {image_path}")
             
-        # Read image
         image = Image.open(image_path).convert("RGB")
         image_np = np.array(image)
         
-        # Apply transforms
         if self.transform:
             augmented = self.transform(image=image_np)
             image_tensor = augmented["image"]
@@ -154,9 +137,6 @@ class BaseSkinDataset(Dataset):
 
 
 class HAM10000Dataset(BaseSkinDataset):
-    """
-    Dataset wrapper for HAM10000 dataset with robust recursive metadata and image discovery.
-    """
     def __init__(self, root: str, split_classes: list, transform=None, mode: str = 'train', verify_distribution: bool = True):
         super().__init__(root, split_classes, transform, mode, verify_distribution)
 
@@ -193,7 +173,7 @@ class HAM10000Dataset(BaseSkinDataset):
 
 class ISIC2019Dataset(BaseSkinDataset):
     """
-    Dataset wrapper for ISIC 2019. Decodes one-hot ground truth CSV with dynamic CSV & image location.
+    Dataset wrapper for ISIC 2019. Supports CSV ground-truth OR folder-per-class format.
     """
     ISIC2019_CLASSES = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
 
@@ -203,51 +183,61 @@ class ISIC2019Dataset(BaseSkinDataset):
         super().__init__(root, split_classes, transform, mode, verify_distribution)
 
     def load_metadata(self) -> pd.DataFrame:
-        csv_path = find_csv_metadata(
-            self.root, 
-            required_cols=["MEL", "NV", "BCC"],
-            keywords=["groundtruth", "train", "isic"]
-        )
-        df = pd.read_csv(csv_path)
-        
-        class_cols = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC", "UNK"]
-        present_cols = [c for c in class_cols if c in df.columns]
-        if not present_cols:
-            raise ValueError(f"No ISIC 2019 class columns found in CSV: {csv_path}")
-        
-        # Decode one-hot columns via argmax
-        df["label_str"] = df[present_cols].idxmax(axis=1)
-        df = df[df["label_str"] != "UNK"].reset_index(drop=True)
-        
-        image_col = "image" if "image" in df.columns else df.columns[0]
-        
-        # Build dynamic image location map across all subdirectories
-        image_map = build_image_map(self.root)
-        
-        image_paths = []
-        matched_mask = []
-        for _, row in df.iterrows():
-            img_id = str(row[image_col]).strip()
-            path = image_map.get(img_id) or image_map.get(os.path.splitext(img_id)[0])
-            if path:
-                image_paths.append(path)
-                matched_mask.append(True)
-            else:
-                matched_mask.append(False)
-                
-        if not any(matched_mask):
-            raise FileNotFoundError(f"Could not resolve any ISIC 2019 image files in {self.root} using CSV {csv_path}")
-        elif not all(matched_mask):
-            print(f"Warning: {len(matched_mask) - sum(matched_mask)} images out of {len(df)} could not be located in {self.root}.")
-            df = df[matched_mask].reset_index(drop=True)
+        # Check if CSV metadata exists
+        try:
+            csv_path = find_csv_metadata(
+                self.root, 
+                required_cols=["MEL", "NV", "BCC"],
+                keywords=["groundtruth", "train", "isic"]
+            )
+            df = pd.read_csv(csv_path)
+            class_cols = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC", "UNK"]
+            present_cols = [c for c in class_cols if c in df.columns]
+            
+            df["label_str"] = df[present_cols].idxmax(axis=1)
+            df = df[df["label_str"] != "UNK"].reset_index(drop=True)
+            
+            image_col = "image" if "image" in df.columns else df.columns[0]
+            image_map = build_image_map(self.root)
+            
+            image_paths = []
+            matched_mask = []
+            for _, row in df.iterrows():
+                img_id = str(row[image_col]).strip()
+                path = image_map.get(img_id) or image_map.get(os.path.splitext(img_id)[0])
+                if path:
+                    image_paths.append(path)
+                    matched_mask.append(True)
+                else:
+                    matched_mask.append(False)
+                    
+            if any(matched_mask):
+                df = df[matched_mask].reset_index(drop=True)
+                df["image_path"] = image_paths
+                return df[["image_path", "label_str"]]
+        except FileNotFoundError:
+            pass
 
-        df["image_path"] = image_paths
-        return df[["image_path", "label_str"]]
+        # Fallback: Folder-per-class structure (e.g. root/MEL/*.jpg, root/NV/*.jpg)
+        records = []
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            folder_name = os.path.basename(dirpath)
+            if folder_name in self.ISIC2019_CLASSES:
+                for fname in filenames:
+                    if fname.lower().endswith(('.jpg', '.jpeg', '.png')):
+                        records.append({
+                            "image_path": os.path.join(dirpath, fname),
+                            "label_str": folder_name
+                        })
+        if records:
+            return pd.DataFrame(records)
+            
+        raise FileNotFoundError(f"Could not load ISIC 2019 metadata via CSV or class subfolders in {self.root}")
 
 
 class SD198Dataset(BaseSkinDataset):
     """
-    Dataset wrapper for SD-198. Discovers class names dynamically across nested directory structures.
+    Dataset wrapper for SD-198. Discovers class names dynamically across directory structures.
     """
     def __init__(self, root: str, split_classes: list = None, transform=None, mode: str = 'all', verify_distribution: bool = False, min_images_per_class: int = 10):
         self.min_images_per_class = min_images_per_class
@@ -257,9 +247,6 @@ class SD198Dataset(BaseSkinDataset):
         super().__init__(root, split_classes, transform, mode, verify_distribution)
 
     def _find_effective_root(self, root: str) -> str:
-        """
-        Locates the directory containing class subdirectories filled with image files.
-        """
         if not os.path.isdir(root):
             raise FileNotFoundError(f"SD-198 root directory not found: {root}")
             
