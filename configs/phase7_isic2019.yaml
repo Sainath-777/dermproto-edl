@@ -25,8 +25,7 @@ paths:
   data_raw: "data/raw"
   checkpoints: "experiments/phase4_checkpoints"
   output_dir: "experiments/phase7_results/isic2019"
-  kaggle_ham10000: "/kaggle/input/datasets/kmader/skin-cancer-mnist-ham10000"
-  kaggle_isic2019: "/kaggle/input/isic-2019"
+  kaggle_isic2019: "/kaggle/input/notebooks/ashfakyeafi/isic-2019"
 
 wandb:
   project: "dermproto-edl"
