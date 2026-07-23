@@ -43,9 +43,9 @@ data/raw/
 data/processed/
 
 # Project-specific Experiments and checkpoints
-experiments/*/checkpoints/
-experiments/*/logs/
-*.pt
+#experiments/*/checkpoints/
+#experiments/*/logs/
+.pt
 *.pth
 *.ckpt
 *.log
