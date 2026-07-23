@@ -137,7 +137,12 @@ def main():
     model = PrototypicalNet(backbone=backbone).to(device)
     edl_head = EvidentialHead(hidden_dim=config["edl"]["hidden_dim"]).to(device)
 
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    # Allow PyTorch to load checkpoint dictionaries containing numpy config objects safely
+    try:
+        checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    except Exception:
+        checkpoint = torch.load(args.checkpoint, map_location=device)
+
     if "edl_head_state_dict" in checkpoint and checkpoint["edl_head_state_dict"] is not None:
         edl_head.load_state_dict(checkpoint["edl_head_state_dict"])
     
